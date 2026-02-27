@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Mr. Lawyer</string>
+    <string name="title_activity_main">Mr. Lawyer</string>
+    <string name="package_name">com.lawyer.justice</string>
+    <string name="custom_url_scheme">com.lawyer.justice</string>
+</resources>
