@@ -1,0 +1,27 @@
+import express from "express";
+import { db } from "../db";
+
+const router = express.Router();
+
+router.post("/", (req, res) => {
+    const { case_id, session_date, notes } = req.body;
+    const result = db.prepare("INSERT INTO sessions (case_id, session_date, notes) VALUES (?, ?, ?)").run(case_id, session_date, notes);
+    res.json({ id: result.lastInsertRowid });
+});
+
+router.get("/upcoming/:lawyerId", (req, res) => {
+    try {
+        const sessions = db.prepare(`
+            SELECT sessions.*, cases.title as case_title, cases.case_number
+            FROM sessions
+            JOIN cases ON sessions.case_id = cases.id
+            WHERE cases.lawyer_id = ? AND sessions.session_date > DATETIME('now', '-1 hour', 'localtime')
+            ORDER BY sessions.session_date ASC
+        `).all(req.params.lawyerId);
+        res.json(sessions);
+    } catch (e: any) {
+        res.status(400).json({ error: e.message });
+    }
+});
+
+export default router;

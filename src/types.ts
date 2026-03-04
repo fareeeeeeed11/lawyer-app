@@ -30,6 +30,8 @@ export interface Session {
   case_id: number;
   session_date: string;
   notes: string;
+  case_title?: string;
+  case_number?: string;
 }
 
 export interface Message {
