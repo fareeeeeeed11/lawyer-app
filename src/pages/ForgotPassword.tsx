@@ -39,84 +39,76 @@ export const ForgotPassword = () => {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center p-4 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-indigo-100 via-slate-50 to-slate-100">
+        <div className="min-h-screen flex items-center justify-center p-4 bg-[#0a0e1a] bg-mesh relative overflow-hidden">
+            <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-[120px]" />
+
             <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="w-full max-w-md glass-panel p-8 rounded-3xl shadow-xl relative"
+                className="w-full max-w-md glass-panel-strong p-10 rounded-[2.5rem] relative z-10"
             >
-                <Link to="/login" className="absolute top-6 right-6 text-slate-400 hover:text-slate-600 transition-colors">
+                <Link to="/login" className="absolute top-6 right-6 text-slate-500 hover:text-white transition-colors p-2 hover:bg-white/5 rounded-xl">
                     <ArrowRight className="w-6 h-6" />
                 </Link>
 
                 <div className="flex flex-col items-center mb-8 mt-4">
-                    <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mb-4 shadow-sm shadow-indigo-200">
-                        <Key className="w-8 h-8 text-indigo-600" />
+                    <div className="w-16 h-16 bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl flex items-center justify-center mb-4 shadow-2xl shadow-amber-500/20">
+                        <Key className="w-8 h-8 text-white" />
                     </div>
-                    <h1 className="text-xl font-bold text-slate-900 text-center">استعادة بيانات الدخول</h1>
-                    <p className="text-slate-500 text-center mt-2 text-sm">أدخل رقم الهاتف وتاريخ الميلاد لاستعادة بيانات حساب المحامي</p>
+                    <h1 className="text-xl font-black text-white text-center">استعادة بيانات الدخول</h1>
+                    <p className="text-slate-500 text-center mt-2 text-sm font-medium">أدخل رقم الهاتف وتاريخ الميلاد لاستعادة بيانات حساب المحامي</p>
                 </div>
 
                 {!result ? (
-                    <form onSubmit={handleSubmit} className="space-y-4">
+                    <form onSubmit={handleSubmit} className="space-y-5">
                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">رقم الهاتف</label>
-                            <input
-                                type="text"
-                                className="input-field dir-ltr text-right"
-                                placeholder="777400733"
-                                value={phone}
-                                onChange={(e) => setPhone(e.target.value)}
-                                required
-                            />
+                            <label className="block text-sm font-bold text-slate-400 mb-2">رقم الهاتف</label>
+                            <input type="text" className="input-field dir-ltr text-right" placeholder="777400733"
+                                value={phone} onChange={(e) => setPhone(e.target.value)} required />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">تاريخ الميلاد</label>
-                            <input
-                                type="text"
-                                className="input-field dir-ltr text-right"
-                                placeholder="19791979mm"
-                                value={dob}
-                                onChange={(e) => setDob(e.target.value)}
-                                required
-                            />
+                            <label className="block text-sm font-bold text-slate-400 mb-2">تاريخ الميلاد</label>
+                            <input type="text" className="input-field dir-ltr text-right" placeholder="19791979mm"
+                                value={dob} onChange={(e) => setDob(e.target.value)} required />
                         </div>
 
                         {error && (
-                            <div className="p-3 bg-red-50 text-red-600 rounded-lg text-sm flex items-center gap-2">
+                            <div className="p-4 bg-red-500/10 text-red-400 rounded-2xl text-sm flex items-center gap-2 border border-red-500/20">
                                 <AlertCircle className="w-4 h-4" />
                                 {error}
                             </div>
                         )}
 
-                        <button
+                        <motion.button
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
                             type="submit"
                             disabled={loading}
-                            className="btn-primary w-full py-3 text-lg mt-2"
+                            className="w-full py-4 bg-gradient-to-r from-amber-500 to-orange-600 text-white rounded-2xl font-black text-lg shadow-2xl shadow-amber-500/20 transition-all disabled:opacity-50"
                         >
-                            {loading ? 'جاري التحقق...' : 'استعادة'}
-                        </button>
+                            {loading ? 'جاري التحقق...' : 'استعادة البيانات'}
+                        </motion.button>
                     </form>
                 ) : (
-                    <div className="space-y-4">
-                        <div className="p-4 bg-green-50 rounded-xl border border-green-100">
-                            <h3 className="text-green-800 font-bold mb-3">بيانات الدخول الخاصة بك:</h3>
-                            <div className="space-y-2">
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+                        <div className="p-6 bg-emerald-500/10 rounded-2xl border border-emerald-500/20">
+                            <h3 className="text-emerald-400 font-black mb-4">بيانات الدخول الخاصة بك:</h3>
+                            <div className="space-y-3">
                                 <div>
-                                    <span className="text-sm text-green-600 block">البريد الإلكتروني:</span>
-                                    <span className="font-mono bg-white px-2 py-1 rounded text-slate-800 border border-green-200 block mt-1 select-all">{result.email}</span>
+                                    <span className="text-sm text-emerald-400/70 block mb-1">البريد الإلكتروني:</span>
+                                    <span className="font-mono bg-white/5 px-4 py-2 rounded-xl text-white border border-white/5 block select-all">{result.email}</span>
                                 </div>
                                 <div>
-                                    <span className="text-sm text-green-600 block">كلمة المرور:</span>
-                                    <span className="font-mono bg-white px-2 py-1 rounded text-slate-800 border border-green-200 block mt-1 select-all">{result.password}</span>
+                                    <span className="text-sm text-emerald-400/70 block mb-1">كلمة المرور:</span>
+                                    <span className="font-mono bg-white/5 px-4 py-2 rounded-xl text-white border border-white/5 block select-all">{result.password}</span>
                                 </div>
                             </div>
                         </div>
 
-                        <Link to="/login" className="btn-primary w-full py-3 text-lg mt-4 inline-block text-center hover:opacity-90">
+                        <Link to="/login" className="w-full py-4 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-black rounded-2xl text-center shadow-2xl shadow-indigo-500/20 block">
                             العودة لتسجيل الدخول
                         </Link>
-                    </div>
+                    </motion.div>
                 )}
             </motion.div>
         </div>

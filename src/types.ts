@@ -6,6 +6,7 @@ export interface User {
   email: string;
   role: UserRole;
   phone?: string;
+  password?: string;
 }
 
 export interface Case {
@@ -19,6 +20,7 @@ export interface Case {
   client_id: number;
   fees: number;
   paid_amount: number;
+  currency: string;
   created_at: string;
   client_name?: string;
   lawyer_name?: string;

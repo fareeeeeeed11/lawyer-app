@@ -16,6 +16,9 @@ import casesRoutes from "./server/routes/cases";
 import sessionsRoutes from "./server/routes/sessions";
 import documentsRoutes from "./server/routes/documents";
 import aiRoutes from "./server/routes/ai";
+import statsRoutes from "./server/routes/stats";
+import searchRoutes from "./server/routes/search";
+import clientsRoutes from "./server/routes/clients";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,12 +45,21 @@ app.use("/api/sessions", sessionsRoutes);
 app.use("/api/cases", casesRoutes);
 app.use("/api/documents", documentsRoutes);
 app.use("/api/ai", aiRoutes);
+app.use("/api/stats", statsRoutes);
+app.use("/api/search", searchRoutes);
+app.use("/api/clients", clientsRoutes);
 app.use("/api", usersRoutes);
 
-// File Download Setup
+// File Serving/Download Setup
 app.get("/api/download/:filename", (req, res) => {
-    const file = path.join(__dirname, "../uploads", req.params.filename);
+    const file = path.join(__dirname, "uploads", req.params.filename);
     res.download(file);
+});
+
+// File Preview Route
+app.get("/api/view/:filename", (req, res) => {
+    const file = path.join(__dirname, "uploads", req.params.filename);
+    res.sendFile(file);
 });
 
 // Socket.IO Setup

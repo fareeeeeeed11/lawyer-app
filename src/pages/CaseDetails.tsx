@@ -15,7 +15,9 @@ import {
     Clock,
     CheckCircle2,
     AlertCircle,
-    Sparkles
+    Sparkles,
+    Eye,
+    X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { io, Socket } from 'socket.io-client';
@@ -30,35 +32,39 @@ function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs));
 }
 
+import { dataService } from '../services/dataService';
+import { documentStorage } from '../services/documentStorage';
+
 export const CaseDetails = ({ user }: { user: User }) => {
     const { id } = useParams();
     const navigate = useNavigate();
     const [caseData, setCaseData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<'details' | 'sessions' | 'documents' | 'chat' | 'ai_chat'>('details');
-    const [socket, setSocket] = useState<Socket | null>(null);
-    const [newMessage, setNewMessage] = useState('');
+    const [activeTab, setActiveTab] = useState<'details' | 'sessions' | 'documents' | 'ai_chat'>('details');
     const [uploading, setUploading] = useState(false);
 
     const [isEditingFees, setIsEditingFees] = useState(false);
     const [feesData, setFeesData] = useState({ fees: '', paid_amount: '', currency: 'ريال سعودي' });
     const [generatingAi, setGeneratingAi] = useState(false);
     const [aiChatHistory, setAiChatHistory] = useState<{ role: 'user' | 'model', parts: { text: string }[] }[]>([]);
-    const [aiChatInput, setAiChatInput] = useState('');
     const [isAiThinking, setIsAiThinking] = useState(false);
     const [aiChatMessages, setAiChatMessages] = useState<any[]>([]);
     const [aiError, setAiError] = useState<string | null>(null);
+    const [aiChatInput, setAiChatInput] = useState('');
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const [previewType, setPreviewType] = useState<'image' | 'pdf' | 'other' | null>(null);
 
     const fetchData = async () => {
         try {
-            const res = await fetch(getApiUrl(`/api/cases/${id}`));
-            const data = await res.json();
+            const data = await dataService.getCaseById(Number(id));
             setCaseData(data);
-            setFeesData({
-                fees: data.fees.toString(),
-                paid_amount: data.paid_amount.toString(),
-                currency: data.currency || 'ريال سعودي'
-            });
+            if (data) {
+                setFeesData({
+                    fees: data.fees.toString(),
+                    paid_amount: data.paid_amount.toString(),
+                    currency: data.currency || 'ريال سعودي'
+                });
+            }
         } catch (err) {
             console.error(err);
         } finally {
@@ -70,39 +76,15 @@ export const CaseDetails = ({ user }: { user: User }) => {
         fetchData();
     }, [id]);
 
-    useEffect(() => {
-        const newSocket = io(API_BASE_URL || window.location.origin);
-        setSocket(newSocket);
-
-        newSocket.emit('join-case', id);
-
-        newSocket.on('new-message', (message) => {
-            setCaseData((prev: any) => ({
-                ...prev,
-                messages: [...(prev?.messages || []), message]
-            }));
-        });
-
-        return () => {
-            newSocket.close();
-        };
-    }, [id]);
-
     const handleUpdateFees = async () => {
         try {
-            const res = await fetch(getApiUrl(`/api/cases/${id}/fees`), {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    fees: Number(feesData.fees) || 0,
-                    paid_amount: Number(feesData.paid_amount) || 0,
-                    currency: feesData.currency
-                })
+            await dataService.updateCaseFees(Number(id), {
+                fees: Number(feesData.fees) || 0,
+                paid_amount: Number(feesData.paid_amount) || 0,
+                currency: feesData.currency
             });
-            if (res.ok) {
-                setIsEditingFees(false);
-                fetchData();
-            }
+            fetchData();
+            setIsEditingFees(false);
         } catch (err) {
             console.error(err);
         }
@@ -111,8 +93,8 @@ export const CaseDetails = ({ user }: { user: User }) => {
     const handleDeleteCase = async () => {
         if (!window.confirm('هل أنت متأكد من حذف هذه القضية نهائياً؟')) return;
         try {
-            const res = await fetch(getApiUrl(`/api/cases/${id}`), { method: 'DELETE' });
-            if (res.ok) navigate('/');
+            await dataService.deleteCase(Number(id));
+            navigate('/');
         } catch (err) {
             console.error(err);
         }
@@ -194,30 +176,22 @@ export const CaseDetails = ({ user }: { user: User }) => {
         }
     };
 
-    const handleSendMessage = async (e: React.FormEvent) => {
+    const handleSendAiMessage = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newMessage.trim()) return;
+        if (!aiChatInput.trim()) return;
 
-        const content = newMessage.trim();
-        setNewMessage('');
+        const content = aiChatInput.trim();
+        setAiChatInput('');
 
-        if (activeTab === 'ai_chat') {
-            const userMsg = {
-                id: Date.now(),
-                sender_id: user.id,
-                sender_name: user.name,
-                content: content,
-                created_at: new Date().toISOString()
-            };
-            setAiChatMessages(prev => [...prev, userMsg]);
-            handleAiChatResponse(content);
-        } else if (socket) {
-            socket.emit('send-message', {
-                case_id: id,
-                sender_id: user.id,
-                content: content
-            });
-        }
+        const userMsg = {
+            id: Date.now(),
+            sender_id: user.id,
+            sender_name: user.name,
+            content: content,
+            created_at: new Date().toISOString()
+        };
+        setAiChatMessages(prev => [...prev, userMsg]);
+        handleAiChatResponse(content);
     };
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -225,19 +199,15 @@ export const CaseDetails = ({ user }: { user: User }) => {
         if (!file) return;
 
         setUploading(true);
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('case_id', id!);
-        formData.append('uploaded_by', user.id.toString());
-
         try {
-            const res = await fetch(getApiUrl('/api/documents'), {
-                method: 'POST',
-                body: formData
+            const localFileName = await documentStorage.saveFile(file);
+            await dataService.addDocument({
+                case_id: Number(id),
+                file_name: file.name,
+                file_path: localFileName,
+                uploaded_by: user.id
             });
-            if (res.ok) {
-                fetchData();
-            }
+            fetchData();
         } catch (err) {
             console.error(err);
         } finally {
@@ -271,7 +241,7 @@ export const CaseDetails = ({ user }: { user: User }) => {
 
     return (
         <div className="max-w-7xl mx-auto p-4 md:p-8 space-y-6">
-            <Link to="/" className="flex items-center gap-2 text-slate-500 hover:text-indigo-600 mb-2 transition-colors">
+            <Link to="/" className="flex items-center gap-2 text-slate-500 hover:text-indigo-400 mb-2 transition-colors">
                 <ChevronLeft className="w-5 h-5 rotate-180" />
                 <span>العودة للرئيسية</span>
             </Link>
@@ -279,10 +249,10 @@ export const CaseDetails = ({ user }: { user: User }) => {
             <div className="glass-panel p-6 rounded-3xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <div className="flex items-center gap-3 mb-2">
-                        <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-xs font-bold">
+                        <span className="px-3 py-1 bg-indigo-500/10 text-indigo-400 rounded-full text-xs font-bold">
                             #{caseData.case_number}
                         </span>
-                        <h1 className="text-2xl font-bold text-slate-900">{caseData.title}</h1>
+                        <h1 className="text-2xl font-bold text-white">{caseData.title}</h1>
                     </div>
                     <p className="text-slate-500 flex items-center gap-2">
                         <Scale className="w-4 h-4" />
@@ -295,7 +265,7 @@ export const CaseDetails = ({ user }: { user: User }) => {
                     <button
                         onClick={handleGenerateAiSummary}
                         disabled={generatingAi}
-                        className="btn-secondary flex items-center gap-2 border-indigo-200 text-indigo-600 hover:bg-indigo-50"
+                        className="btn-secondary flex items-center gap-2 border-indigo-200 text-indigo-400 hover:bg-indigo-500/10"
                     >
                         <Sparkles className={cn("w-5 h-5", generatingAi && "animate-spin")} />
                         <span>{generatingAi ? 'جاري التحضير...' : 'استشارة سريعة'}</span>
@@ -303,31 +273,28 @@ export const CaseDetails = ({ user }: { user: User }) => {
                     <div className="flex items-center gap-3">
                         <div className="text-left md:text-right">
                             <p className="text-xs text-slate-400 uppercase tracking-wider font-bold">الموكل</p>
-                            <p className="font-bold text-slate-700">{caseData.client_name}</p>
+                            <p className="font-bold text-slate-300">{caseData.client_name}</p>
                         </div>
-                        <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-500">
+                        <div className="w-12 h-12 bg-white/5 rounded-full flex items-center justify-center text-slate-500">
                             <Users className="w-6 h-6" />
                         </div>
                     </div>
-                    {user.role === 'lawyer' && (
-                        <button
-                            onClick={handleDeleteCase}
-                            className="p-3 text-red-500 hover:bg-red-50 rounded-2xl transition-colors"
-                            title="حذف القضية"
-                        >
-                            <AlertCircle className="w-6 h-6" />
-                        </button>
-                    )}
+                    <button
+                        onClick={handleDeleteCase}
+                        className="p-3 text-red-500 hover:bg-red-500/10 rounded-2xl transition-colors"
+                        title="حذف القضية"
+                    >
+                        <AlertCircle className="w-6 h-6" />
+                    </button>
                 </div>
             </div>
 
 
-            <div className="flex border-b border-slate-200 gap-8 overflow-x-auto no-scrollbar">
+            <div className="flex border-b border-white/10 gap-8 overflow-x-auto no-scrollbar">
                 {[
                     { id: 'details', label: 'التفاصيل', icon: FileText },
                     { id: 'sessions', label: 'الجلسات', icon: Calendar },
                     { id: 'documents', label: 'المستندات', icon: Upload },
-                    { id: 'chat', label: 'المراسلات', icon: MessageSquare },
                     { id: 'ai_chat', label: 'المستشار الذكي', icon: Sparkles },
                 ].map((tab) => (
                     <button
@@ -336,8 +303,8 @@ export const CaseDetails = ({ user }: { user: User }) => {
                         className={cn(
                             "flex items-center gap-2 py-4 px-2 border-b-2 transition-all whitespace-nowrap",
                             activeTab === tab.id
-                                ? "border-indigo-600 text-indigo-600 font-bold"
-                                : "border-transparent text-slate-500 hover:text-slate-700"
+                                ? "border-indigo-600 text-indigo-400 font-bold"
+                                : "border-transparent text-slate-500 hover:text-slate-300"
                         )}
                     >
                         <tab.icon className="w-5 h-5" />
@@ -358,25 +325,25 @@ export const CaseDetails = ({ user }: { user: User }) => {
                         >
                             <div className="md:col-span-2 space-y-6">
                                 <div className="glass-panel p-6 rounded-2xl">
-                                    <h3 className="text-lg font-bold text-slate-800 mb-4">ملخص القضية</h3>
+                                    <h3 className="text-lg font-bold text-white mb-4">ملخص القضية</h3>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                                        <div className="p-4 bg-slate-50 rounded-xl">
+                                        <div className="p-4 bg-white/5 rounded-xl">
                                             <p className="text-xs text-slate-400 mb-1">تاريخ البدء</p>
                                             <p className="font-bold">{format(new Date(caseData.created_at), 'dd MMMM yyyy', { locale: ar })}</p>
                                         </div>
-                                        <div className="p-4 bg-slate-50 rounded-xl">
+                                        <div className="p-4 bg-white/5 rounded-xl">
                                             <p className="text-xs text-slate-400 mb-1">الحالة</p>
                                             <p className="font-bold text-emerald-600">نشطة</p>
                                         </div>
-                                        <div className="p-4 bg-slate-50 rounded-xl">
+                                        <div className="p-4 bg-white/5 rounded-xl">
                                             <p className="text-xs text-slate-400 mb-1">المحكمة</p>
                                             <p className="font-bold">{caseData.court}</p>
                                         </div>
-                                        <div className="p-4 bg-slate-50 rounded-xl">
+                                        <div className="p-4 bg-white/5 rounded-xl">
                                             <p className="text-xs text-slate-400 mb-1">نوع القضية</p>
                                             <p className="font-bold">{caseData.type}</p>
                                         </div>
-                                        <div className="md:col-span-2 p-5 bg-gradient-to-br from-indigo-50/50 to-white border border-indigo-100 rounded-2xl relative group">
+                                        <div className="md:col-span-2 p-5 bg-gradient-to-br from-indigo-500/5 to-transparent border border-indigo-500/20 rounded-2xl relative group">
                                             <div className="flex justify-between items-start mb-4">
                                                 <div>
                                                     <h4 className="text-sm font-bold text-indigo-900 flex items-center gap-2">
@@ -385,10 +352,10 @@ export const CaseDetails = ({ user }: { user: User }) => {
                                                     </h4>
                                                     <p className="text-[10px] text-indigo-400">إدارة الأتعاب والتحصيل</p>
                                                 </div>
-                                                {user.role === 'lawyer' && !isEditingFees && (
+                                                {!isEditingFees && (
                                                     <button
                                                         onClick={() => setIsEditingFees(true)}
-                                                        className="p-2 hover:bg-white rounded-xl shadow-sm border border-indigo-50 transition-all text-indigo-600 font-bold text-xs flex items-center gap-1"
+                                                        className="p-2 hover:bg-white/10 rounded-xl shadow-sm border border-indigo-500/20 transition-all text-indigo-400 font-bold text-xs flex items-center gap-1"
                                                     >
                                                         <Plus className="w-3 h-3" />
                                                         تعديل
@@ -400,12 +367,12 @@ export const CaseDetails = ({ user }: { user: User }) => {
                                                 <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
                                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                                         <div className="space-y-1">
-                                                            <label className="text-[10px] font-bold text-indigo-600 mr-1">إجمالي الأتعاب</label>
+                                                            <label className="text-[10px] font-bold text-indigo-400 mr-1">إجمالي الأتعاب</label>
                                                             <div className="relative flex group">
                                                                 <input
                                                                     type="text"
                                                                     inputMode="numeric"
-                                                                    className="w-full bg-white border-2 border-indigo-100 focus:border-indigo-500 rounded-xl p-3 pl-24 text-sm outline-none transition-all font-bold"
+                                                                    className="w-full bg-white border-2 border-indigo-500/20 focus:border-indigo-500 rounded-xl p-3 pl-24 text-sm outline-none transition-all font-bold"
                                                                     placeholder="0"
                                                                     value={feesData.fees}
                                                                     onChange={e => {
@@ -414,7 +381,7 @@ export const CaseDetails = ({ user }: { user: User }) => {
                                                                     }}
                                                                 />
                                                                 <select
-                                                                    className="absolute left-2 top-2 bottom-2 w-20 bg-indigo-50 border-none rounded-lg text-[10px] font-bold text-indigo-600 outline-none cursor-pointer text-center appearance-none"
+                                                                    className="absolute left-2 top-2 bottom-2 w-20 bg-indigo-500/10 border-none rounded-lg text-[10px] font-bold text-indigo-400 outline-none cursor-pointer text-center appearance-none"
                                                                     value={feesData.currency}
                                                                     onChange={e => setFeesData({ ...feesData, currency: e.target.value })}
                                                                 >
@@ -451,7 +418,7 @@ export const CaseDetails = ({ user }: { user: User }) => {
                                                     <div className="flex gap-3 mt-2">
                                                         <button
                                                             onClick={handleUpdateFees}
-                                                            className="flex-1 bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all"
+                                                            className="flex-1 bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-500/20 transition-all"
                                                         >
                                                             حفظ التغييرات
                                                         </button>
@@ -464,7 +431,7 @@ export const CaseDetails = ({ user }: { user: User }) => {
                                                                     currency: caseData.currency || 'ريال سعودي'
                                                                 });
                                                             }}
-                                                            className="px-6 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200"
+                                                            className="px-6 bg-white/5 text-slate-600 font-bold rounded-xl hover:bg-slate-200"
                                                         >
                                                             إلغاء
                                                         </button>
@@ -475,9 +442,9 @@ export const CaseDetails = ({ user }: { user: User }) => {
                                                     <div className="grid grid-cols-3 gap-4">
                                                         <div className="text-center">
                                                             <p className="text-[10px] text-slate-400 mb-1">الإجمالي</p>
-                                                            <p className="font-black text-indigo-700 text-lg">{caseData.fees.toLocaleString()} <span className="text-[10px] font-bold">{caseData.currency || 'ريال سعودي'}</span></p>
+                                                            <p className="font-black text-indigo-400 text-lg">{caseData.fees.toLocaleString()} <span className="text-[10px] font-bold">{caseData.currency || 'ريال سعودي'}</span></p>
                                                         </div>
-                                                        <div className="text-center border-x border-slate-100">
+                                                        <div className="text-center border-x border-white/5">
                                                             <p className="text-[10px] text-slate-400 mb-1">المدفوع</p>
                                                             <p className="font-black text-emerald-600 text-lg">{caseData.paid_amount.toLocaleString()} <span className="text-[10px] font-bold">{caseData.currency || 'ريال سعودي'}</span></p>
                                                         </div>
@@ -490,17 +457,17 @@ export const CaseDetails = ({ user }: { user: User }) => {
                                                     <div className="space-y-2">
                                                         <div className="flex justify-between items-end">
                                                             <span className="text-[10px] font-bold text-slate-500">نسبة التحصيل</span>
-                                                            <span className="text-xs font-black text-indigo-600">
+                                                            <span className="text-xs font-black text-indigo-400">
                                                                 {Math.round((caseData.paid_amount / (caseData.fees || 1)) * 100)}%
                                                             </span>
                                                         </div>
-                                                        <div className="h-3 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-white shadow-inner">
+                                                        <div className="h-3 bg-white/5 rounded-full overflow-hidden p-0.5 border border-white shadow-inner">
                                                             <motion.div
                                                                 initial={{ width: 0 }}
                                                                 animate={{ width: `${(caseData.paid_amount / (caseData.fees || 1)) * 100}%` }}
                                                                 className={cn(
                                                                     "h-full rounded-full shadow-sm",
-                                                                    (caseData.paid_amount / (caseData.fees || 1)) >= 1 ? "bg-emerald-500" : "bg-indigo-600"
+                                                                    (caseData.paid_amount / (caseData.fees || 1)) >= 1 ? "bg-emerald-500/100" : "bg-indigo-600"
                                                                 )}
                                                             />
                                                         </div>
@@ -512,13 +479,13 @@ export const CaseDetails = ({ user }: { user: User }) => {
                                 </div>
 
                                 <div className="glass-panel p-6 rounded-2xl">
-                                    <h3 className="text-lg font-bold text-slate-800 mb-4">سير القضية</h3>
-                                    <div className="relative pr-8 space-y-8 before:absolute before:right-3 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-100">
+                                    <h3 className="text-lg font-bold text-white mb-4">سير القضية</h3>
+                                    <div className="relative pr-8 space-y-8 before:absolute before:right-3 before:top-2 before:bottom-2 before:w-0.5 before:bg-white/5">
                                         <div className="relative">
-                                            <div className="absolute -right-8 top-1 w-6 h-6 bg-emerald-500 rounded-full border-4 border-white shadow-sm flex items-center justify-center">
+                                            <div className="absolute -right-8 top-1 w-6 h-6 bg-emerald-500/100 rounded-full border-4 border-white shadow-sm flex items-center justify-center">
                                                 <CheckCircle2 className="w-3 h-3 text-white" />
                                             </div>
-                                            <p className="font-bold text-slate-800">تم استلام القضية</p>
+                                            <p className="font-bold text-white">تم استلام القضية</p>
                                             <p className="text-sm text-slate-500">
                                                 {(() => {
                                                     try {
@@ -529,10 +496,10 @@ export const CaseDetails = ({ user }: { user: User }) => {
                                             </p>
                                         </div>
                                         <div className="relative">
-                                            <div className="absolute -right-8 top-1 w-6 h-6 bg-indigo-500 rounded-full border-4 border-white shadow-sm flex items-center justify-center">
+                                            <div className="absolute -right-8 top-1 w-6 h-6 bg-indigo-500/100 rounded-full border-4 border-white shadow-sm flex items-center justify-center">
                                                 <Clock className="w-3 h-3 text-white" />
                                             </div>
-                                            <p className="font-bold text-slate-800">قيد المراجعة والمرافعة</p>
+                                            <p className="font-bold text-white">قيد المراجعة والمرافعة</p>
                                             <p className="text-sm text-slate-500">جاري العمل على الملف</p>
                                         </div>
                                     </div>
@@ -541,10 +508,10 @@ export const CaseDetails = ({ user }: { user: User }) => {
 
                             <div className="space-y-6">
                                 <div className="glass-panel p-6 rounded-2xl">
-                                    <h3 className="text-lg font-bold text-slate-800 mb-4">معلومات التواصل</h3>
+                                    <h3 className="text-lg font-bold text-white mb-4">معلومات التواصل</h3>
                                     <div className="space-y-4">
                                         <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center">
+                                            <div className="w-10 h-10 bg-indigo-500/10 text-indigo-400 rounded-lg flex items-center justify-center">
                                                 <Users className="w-5 h-5" />
                                             </div>
                                             <div>
@@ -553,7 +520,7 @@ export const CaseDetails = ({ user }: { user: User }) => {
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 bg-slate-50 text-slate-600 rounded-lg flex items-center justify-center">
+                                            <div className="w-10 h-10 bg-white/5 text-slate-600 rounded-lg flex items-center justify-center">
                                                 <MessageSquare className="w-5 h-5" />
                                             </div>
                                             <div>
@@ -575,23 +542,21 @@ export const CaseDetails = ({ user }: { user: User }) => {
                             exit={{ opacity: 0, scale: 0.95 }}
                             className="space-y-6"
                         >
-                            {user.role === 'lawyer' && (
-                                <div className="glass-panel p-6 rounded-2xl">
-                                    <h3 className="text-lg font-bold text-slate-800 mb-4">إضافة جلسة جديدة</h3>
-                                    <form onSubmit={handleAddSession} className="flex flex-col md:flex-row gap-4">
-                                        <input name="date" type="datetime-local" className="input-field flex-1" required />
-                                        <input name="notes" type="text" placeholder="ملاحظات الجلسة..." className="input-field flex-[2]" />
-                                        <button type="submit" className="btn-primary whitespace-nowrap">إضافة موعد</button>
-                                    </form>
-                                </div>
-                            )}
+                            <div className="glass-panel p-6 rounded-2xl">
+                                <h3 className="text-lg font-bold text-white mb-4">إضافة جلسة جديدة</h3>
+                                <form onSubmit={handleAddSession} className="flex flex-col md:flex-row gap-4">
+                                    <input name="date" type="datetime-local" className="input-field flex-1" required />
+                                    <input name="notes" type="text" placeholder="ملاحظات الجلسة..." className="input-field flex-[2]" />
+                                    <button type="submit" className="btn-primary whitespace-nowrap">إضافة موعد</button>
+                                </form>
+                            </div>
 
                             <div className="grid grid-cols-1 gap-4">
                                 {caseData.sessions.length > 0 ? (
                                     caseData.sessions.map((s: Session) => (
                                         <div key={s.id} className="glass-panel p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                                             <div className="flex items-center gap-4">
-                                                <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center">
+                                                <div className="w-12 h-12 bg-amber-500/10 text-amber-400 rounded-xl flex items-center justify-center">
                                                     <Calendar className="w-6 h-6" />
                                                 </div>
                                                 <div>
@@ -603,7 +568,7 @@ export const CaseDetails = ({ user }: { user: User }) => {
                                                             }
                                                             return (
                                                                 <>
-                                                                    <p className="font-bold text-slate-900">
+                                                                    <p className="font-bold text-white">
                                                                         {format(d, 'EEEE, dd MMMM yyyy', { locale: ar })}
                                                                     </p>
                                                                     <p className="text-sm text-slate-500">
@@ -618,17 +583,17 @@ export const CaseDetails = ({ user }: { user: User }) => {
                                                 </div>
                                             </div>
                                             <div className="flex-1">
-                                                <p className="text-slate-600 bg-slate-50 p-3 rounded-lg text-sm border border-slate-100 italic">
+                                                <p className="text-slate-600 bg-white/5 p-3 rounded-lg text-sm border border-white/5 italic">
                                                     {s.notes || 'لا توجد ملاحظات'}
                                                 </p>
                                             </div>
                                             <div className={cn(
                                                 "px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1",
-                                                new Date(s.session_date) > new Date() ? "bg-amber-50 text-amber-600" : "bg-slate-100 text-slate-500"
+                                                new Date(s.session_date) > new Date() ? "bg-amber-500/10 text-amber-400" : "bg-white/5 text-slate-500"
                                             )}>
                                                 {new Date(s.session_date) > new Date() ? (
                                                     <>
-                                                        <div className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-ping" />
+                                                        <div className="w-1.5 h-1.5 bg-amber-500/100 rounded-full animate-ping" />
                                                         قادمة
                                                     </>
                                                 ) : 'منتهية'}
@@ -653,11 +618,11 @@ export const CaseDetails = ({ user }: { user: User }) => {
                             exit={{ opacity: 0, y: -10 }}
                             className="space-y-6"
                         >
-                            <div className="glass-panel p-8 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-center">
-                                <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mb-4">
+                            <div className="glass-panel p-8 rounded-2xl border-2 border-dashed border-white/10 flex flex-col items-center justify-center text-center">
+                                <div className="w-16 h-16 bg-indigo-500/10 text-indigo-400 rounded-full flex items-center justify-center mb-4">
                                     <Upload className="w-8 h-8" />
                                 </div>
-                                <h3 className="text-lg font-bold text-slate-800">رفع مستند جديد</h3>
+                                <h3 className="text-lg font-bold text-white">رفع مستند جديد</h3>
                                 <p className="text-slate-500 mb-6">يمكنك رفع ملفات PDF أو صور تتعلق بالقضية</p>
                                 <label className={cn(
                                     "btn-primary cursor-pointer flex items-center gap-2",
@@ -672,93 +637,42 @@ export const CaseDetails = ({ user }: { user: User }) => {
                                 {caseData.documents.map((d: Document) => (
                                     <div key={d.id} className="glass-panel p-4 rounded-xl flex items-center justify-between group">
                                         <div className="flex items-center gap-3 overflow-hidden">
-                                            <div className="w-10 h-10 bg-slate-100 text-slate-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                                            <div className="w-10 h-10 bg-white/5 text-slate-500 rounded-lg flex items-center justify-center flex-shrink-0">
                                                 <FileText className="w-5 h-5" />
                                             </div>
                                             <div className="overflow-hidden">
-                                                <p className="font-bold text-sm text-slate-800 truncate" title={d.file_name}>{d.file_name}</p>
+                                                <p className="font-bold text-sm text-white truncate" title={d.file_name}>{d.file_name}</p>
                                                 <p className="text-xs text-slate-400">{format(new Date(d.created_at), 'dd/MM/yyyy')}</p>
                                             </div>
                                         </div>
-                                        <a
-                                            href={getApiUrl(`/api/download/${d.file_path}`)}
-                                            download={d.file_name}
-                                            className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
-                                        >
-                                            <Download className="w-5 h-5" />
-                                        </a>
+                                        <div className="flex items-center gap-1">
+                                            <button
+                                                onClick={async () => {
+                                                    const isImg = /\.(jpg|jpeg|png|gif|webp)$/i.test(d.file_name);
+                                                    const isPdf = /\.pdf$/i.test(d.file_name);
+                                                    const uri = await documentStorage.getFileUri(d.file_path);
+                                                    setPreviewUrl(uri);
+                                                    setPreviewType(isImg ? 'image' : isPdf ? 'pdf' : 'other');
+                                                }}
+                                                className="p-2 text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-all"
+                                                title="معاينة"
+                                            >
+                                                <Eye className="w-5 h-5" />
+                                            </button>
+                                            <button
+                                                onClick={async () => {
+                                                    const uri = await documentStorage.getFileUri(d.file_path);
+                                                    window.open(uri, '_blank');
+                                                }}
+                                                className="p-2 text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-all"
+                                                title="فتح"
+                                            >
+                                                <Download className="w-5 h-5" />
+                                            </button>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
-                        </motion.div>
-                    )}
-
-                    {activeTab === 'chat' && (
-                        <motion.div
-                            key="chat"
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.95 }}
-                            transition={{ type: "spring", damping: 25, stiffness: 200 }}
-                            className="glass-panel rounded-3xl overflow-hidden flex flex-col h-[600px] shadow-2xl border-indigo-100"
-                        >
-                            <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center gap-3">
-                                <div className="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-lg shadow-indigo-200">
-                                    <MessageSquare className="w-5 h-5" />
-                                </div>
-                                <div>
-                                    <p className="font-bold text-slate-800">المحادثة الفورية</p>
-                                    <p className="text-xs text-emerald-600 flex items-center gap-1">
-                                        <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-                                        متصل الآن
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50">
-                                {caseData.messages.map((m: Message, idx: number) => (
-                                    <motion.div
-                                        key={m.id}
-                                        initial={{ opacity: 0, x: m.sender_id === user.id ? -20 : 20 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        transition={{ delay: idx * 0.05 }}
-                                        className={cn(
-                                            "flex flex-col max-w-[80%]",
-                                            m.sender_id === user.id ? "mr-auto items-end" : "ml-auto items-start"
-                                        )}
-                                    >
-                                        <div className={cn(
-                                            "p-3 rounded-2xl text-sm shadow-sm transition-all hover:shadow-md",
-                                            m.sender_id === user.id
-                                                ? "bg-indigo-600 text-white rounded-tl-none"
-                                                : "bg-white text-slate-800 border border-slate-100 rounded-tr-none"
-                                        )}>
-                                            {m.content}
-                                        </div>
-                                        <span className="text-[10px] text-slate-400 mt-1 px-1">
-                                            {m.sender_name} • {format(new Date(m.created_at), 'HH:mm')}
-                                        </span>
-                                    </motion.div>
-                                ))}
-                            </div>
-
-                            <form onSubmit={handleSendMessage} className="p-4 bg-white border-t border-slate-100 flex gap-2">
-                                <input
-                                    type="text"
-                                    className="input-field"
-                                    placeholder="اكتب رسالتك هنا..."
-                                    value={newMessage}
-                                    onChange={e => setNewMessage(e.target.value)}
-                                />
-                                <motion.button
-                                    whileHover={{ scale: 1.05 }}
-                                    whileTap={{ scale: 0.95 }}
-                                    type="submit"
-                                    className="btn-primary p-3 rounded-xl shadow-lg shadow-indigo-100"
-                                >
-                                    <Send className="w-5 h-5" />
-                                </motion.button>
-                            </form>
                         </motion.div>
                     )}
 
@@ -769,17 +683,17 @@ export const CaseDetails = ({ user }: { user: User }) => {
                             animate={{ opacity: 1, scale: 1 }}
                             exit={{ opacity: 0, scale: 0.95 }}
                             transition={{ type: "spring", damping: 25, stiffness: 200 }}
-                            className="glass-panel rounded-3xl overflow-hidden flex flex-col h-[600px] shadow-2xl border-indigo-100"
+                            className="glass-panel rounded-3xl overflow-hidden flex flex-col h-[600px] shadow-2xl border-indigo-500/20"
                         >
-                            <div className="p-4 border-b border-slate-100 bg-gradient-to-r from-indigo-50 to-white flex items-center justify-between">
+                            <div className="p-4 border-b border-white/5 bg-gradient-to-r from-indigo-500/10 to-transparent flex items-center justify-between">
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-lg shadow-indigo-200">
                                         <Sparkles className="w-5 h-5" />
                                     </div>
                                     <div>
-                                        <p className="font-bold text-slate-800">المستشار القانوني الخاص</p>
-                                        <p className="text-xs text-indigo-600 flex items-center gap-1">
-                                            <span className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse"></span>
+                                        <p className="font-bold text-white">المستشار القانوني الخاص</p>
+                                        <p className="text-xs text-indigo-400 flex items-center gap-1">
+                                            <span className="w-2 h-2 bg-indigo-500/100 rounded-full animate-pulse"></span>
                                             مستعد للتحليل والرد
                                         </p>
                                     </div>
@@ -787,27 +701,27 @@ export const CaseDetails = ({ user }: { user: User }) => {
                                 <button
                                     onClick={handleGenerateAiSummary}
                                     disabled={generatingAi}
-                                    className="btn-secondary text-xs py-2 border-indigo-200 text-indigo-600 hover:bg-indigo-50"
+                                    className="btn-secondary text-xs py-2 border-indigo-200 text-indigo-400 hover:bg-indigo-500/10"
                                 >
                                     <Sparkles className={cn("w-3 h-3 ml-1", generatingAi && "animate-spin")} />
                                     {generatingAi ? 'جاري التحضير...' : 'بدء استشارة جديدة'}
                                 </button>
                             </div>
 
-                            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/30">
+                            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-white/5/30">
                                 {aiError && (
-                                    <div className="p-4 bg-red-50 border border-red-100 rounded-2xl flex items-center gap-3 text-red-600 mb-4">
+                                    <div className="p-4 bg-red-500/10 border border-red-100 rounded-2xl flex items-center gap-3 text-red-400 mb-4">
                                         <AlertCircle className="w-5 h-5 flex-shrink-0" />
                                         <p className="text-sm font-bold">{aiError}</p>
                                     </div>
                                 )}
                                 {aiChatMessages.length === 0 ? (
                                     <div className="flex flex-col items-center justify-center h-full text-center space-y-6 p-8">
-                                        <div className="w-20 h-20 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center animate-bounce duration-[3000ms]">
+                                        <div className="w-20 h-20 bg-indigo-500/10 text-indigo-400 rounded-full flex items-center justify-center animate-bounce duration-[3000ms]">
                                             <Sparkles className="w-10 h-10" />
                                         </div>
                                         <div>
-                                            <h3 className="text-xl font-bold text-slate-800 mb-2">مرحباً بك في الاستشارة القانونية الذكية</h3>
+                                            <h3 className="text-xl font-bold text-white mb-2">مرحباً بك في الاستشارة القانونية الذكية</h3>
                                             <p className="text-slate-500 max-w-sm mx-auto">أنا مساعدك الرقمي المتخصص. يمكنك سؤالي عن أي شيء يخص القانون أو هذه القضية مباشرة.</p>
                                         </div>
 
@@ -831,7 +745,7 @@ export const CaseDetails = ({ user }: { user: User }) => {
                                                         setAiChatMessages(prev => [...prev, userMsg]);
                                                         handleAiChatResponse(q);
                                                     }}
-                                                    className="p-3 text-sm text-right bg-white border border-slate-100 rounded-xl hover:border-indigo-400 hover:text-indigo-600 transition-all shadow-sm"
+                                                    className="p-3 text-sm text-right bg-white border border-white/5 rounded-xl hover:border-indigo-400 hover:text-indigo-400 transition-all shadow-sm"
                                                 >
                                                     {q}
                                                 </button>
@@ -854,7 +768,7 @@ export const CaseDetails = ({ user }: { user: User }) => {
                                                 "p-4 rounded-2xl text-sm shadow-sm transition-all hover:shadow-md",
                                                 m.sender_id === user.id
                                                     ? "bg-indigo-600 text-white rounded-tl-none"
-                                                    : "bg-white text-slate-800 border border-indigo-100 rounded-tr-none shadow-indigo-100/30"
+                                                    : "bg-white/5 text-white border border-indigo-500/20 rounded-tr-none shadow-indigo-500/20/30"
                                             )}>
                                                 {m.sender_id !== user.id ? (
                                                     <div className="prose prose-sm prose-indigo max-w-none">
@@ -870,10 +784,10 @@ export const CaseDetails = ({ user }: { user: User }) => {
                                 )}
                                 {isAiThinking && (
                                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex ml-auto items-start">
-                                        <div className="bg-white border border-indigo-100 p-4 rounded-2xl rounded-tr-none shadow-sm flex items-center gap-3">
+                                        <div className="bg-white/5 border border-indigo-500/20 p-4 rounded-2xl rounded-tr-none shadow-sm flex items-center gap-3">
                                             <div className="flex gap-1">
                                                 <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                                                <div className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                                                <div className="w-2 h-2 bg-indigo-500/100 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
                                                 <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce"></div>
                                             </div>
                                             <span className="text-xs text-indigo-400 font-bold">جاري تحليل البيانات...</span>
@@ -882,29 +796,94 @@ export const CaseDetails = ({ user }: { user: User }) => {
                                 )}
                             </div>
 
-                            <form onSubmit={handleSendMessage} className="p-4 bg-white border-t border-slate-100 flex gap-2">
+                            <form onSubmit={handleSendAiMessage} className="p-4 bg-white/5 border-t border-white/5 flex gap-3 items-center">
                                 <input
                                     type="text"
-                                    className="input-field shadow-inner"
-                                    placeholder="اكتب استفسارك القانوني هنا..."
-                                    value={newMessage}
-                                    onChange={e => setNewMessage(e.target.value)}
+                                    className="input-field shadow-inner w-full flex-1 py-4 text-base"
+                                    placeholder="اكتب استفسارك القانوني هنا... (اضغط Enter للإرسال)"
+                                    value={aiChatInput}
+                                    onChange={e => setAiChatInput(e.target.value)}
                                     disabled={isAiThinking}
                                 />
                                 <motion.button
                                     whileHover={{ scale: 1.05 }}
                                     whileTap={{ scale: 0.95 }}
                                     type="submit"
-                                    className="btn-primary p-3 rounded-xl shadow-lg shadow-indigo-100"
-                                    disabled={!newMessage.trim() || isAiThinking}
+                                    className="btn-primary p-4 rounded-xl shadow-lg shadow-indigo-500/20 flex items-center justify-center flex-shrink-0"
+                                    disabled={!aiChatInput.trim() || isAiThinking}
                                 >
-                                    <Send className="w-5 h-5" />
+                                    <Send className="w-6 h-6" />
                                 </motion.button>
                             </form>
                         </motion.div>
                     )}
                 </AnimatePresence>
             </div>
+
+            {/* Preview Modal */}
+            <AnimatePresence>
+                {previewUrl && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[100] bg-[#0a0e1a]/95 flex items-center justify-center p-4 backdrop-blur-md"
+                        onClick={() => setPreviewUrl(null)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                            animate={{ scale: 1, opacity: 1, y: 0 }}
+                            exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                            className="bg-[#131d33] border border-white/10 rounded-[2.5rem] w-full max-w-5xl h-[85vh] overflow-hidden flex flex-col relative shadow-2xl"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/5">
+                                <h3 className="text-xl font-bold text-white flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-indigo-500/10 text-indigo-400 rounded-xl flex items-center justify-center">
+                                        <Eye className="w-5 h-5" />
+                                    </div>
+                                    معاينة المستند
+                                </h3>
+                                <button
+                                    onClick={() => setPreviewUrl(null)}
+                                    className="p-3 bg-white/5 hover:bg-white/10 rounded-2xl text-slate-400 hover:text-white transition-all flex items-center justify-center"
+                                >
+                                    <X className="w-6 h-6" />
+                                </button>
+                            </div>
+                            <div className="flex-1 bg-black/40 flex items-center justify-center overflow-auto p-4 custom-scrollbar">
+                                {previewType === 'image' ? (
+                                    <img
+                                        src={previewUrl}
+                                        alt="Document Preview"
+                                        className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                                    />
+                                ) : previewType === 'pdf' ? (
+                                    <iframe
+                                        src={previewUrl}
+                                        className="w-full h-full border-none rounded-lg bg-white"
+                                        title="PDF Preview"
+                                    />
+                                ) : (
+                                    <div className="text-center space-y-4">
+                                        <div className="w-20 h-20 bg-white/5 text-slate-500 rounded-3xl flex items-center justify-center mx-auto">
+                                            <FileText className="w-10 h-10" />
+                                        </div>
+                                        <p className="text-slate-400 font-bold">هذا النوع من الملفات لا يدعم المعاينة المباشرة</p>
+                                        <a
+                                            href={previewUrl.replace('/api/view/', '/api/download/')}
+                                            download
+                                            className="btn-primary inline-flex mt-4"
+                                        >
+                                            تحميل الملف الآن
+                                        </a>
+                                    </div>
+                                )}
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 };

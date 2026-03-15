@@ -9,6 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -20,6 +21,11 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Verify Node.js Version
+        run: |
+          echo "Node version: $(node --version)"
+          echo "NPM version: $(npm --version)"
+
       - name: Install dependencies
         run: npm install
 
@@ -27,7 +33,7 @@ jobs:
         run: npm run build
 
       - name: Sync Capacitor
-        run: npx cap sync android
+        run: ./node_modules/.bin/cap sync android
 
       - name: Build APK
         run: |

@@ -25,7 +25,7 @@ const SYSTEM_INSTRUCTIONS = `
 
 router.post("/chat", async (req, res) => {
   const { caseId, message, history } = req.body;
-  const modelsToTry = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-pro"];
+  const modelsToTry = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest"];
   let lastError = null;
 
   for (const modelName of modelsToTry) {

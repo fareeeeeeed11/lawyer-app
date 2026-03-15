@@ -4,44 +4,54 @@ import { db } from '../db';
 const router = express.Router();
 
 router.get("/", (req, res) => {
-    const { userId, role } = req.query;
-    let cases;
-    if (role === 'lawyer') {
-        cases = db.prepare(`
+    const { userId } = req.query;
+    if (!userId) {
+        return res.status(400).json({ error: "Missing userId" });
+    }
+    const cases = db.prepare(`
       SELECT cases.*, users.name as client_name 
       FROM cases 
       JOIN users ON cases.client_id = users.id 
       WHERE lawyer_id = ?
       ORDER BY created_at DESC
     `).all(userId);
-    } else {
-        cases = db.prepare(`
-      SELECT cases.*, users.name as lawyer_name 
-      FROM cases 
-      JOIN users ON cases.lawyer_id = users.id 
-      WHERE client_id = ?
-      ORDER BY created_at DESC
-    `).all(userId);
-    }
     res.json(cases);
 });
 
 router.post("/", (req, res) => {
-    const { case_number, title, court, type, lawyer_id, client_name, client_email, fees, currency } = req.body;
+    const { case_number, title, court, type, lawyer_id, client_id, client_name, client_phone, fees, currency } = req.body;
 
     try {
-        let client = db.prepare("SELECT * FROM users WHERE email = ?").get(client_email) as any;
-        if (!client) {
-            const result = db.prepare("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)").run(
-                client_name, client_email, "123456", "client"
-            );
-            client = { id: result.lastInsertRowid };
+        let finalClientId = client_id;
+        const safePhone = client_phone?.trim() || "";
+        const safeName = client_name?.trim() || "";
+
+        if (!finalClientId) {
+            let existingClient = null;
+            if (safePhone) {
+                existingClient = db.prepare("SELECT * FROM users WHERE phone = ? AND role = 'client'").get(safePhone) as any;
+            }
+            if (!existingClient && safeName) {
+                existingClient = db.prepare("SELECT * FROM users WHERE name = ? AND role = 'client'").get(safeName) as any;
+            }
+
+            if (existingClient) {
+                finalClientId = existingClient.id;
+                if (safePhone && existingClient.phone !== safePhone) {
+                    db.prepare("UPDATE users SET phone = ? WHERE id = ?").run(safePhone, finalClientId);
+                }
+            } else {
+                const result = db.prepare("INSERT INTO users (name, phone, password, role) VALUES (?, ?, ?, ?)").run(
+                    safeName, safePhone, "123456", "client"
+                );
+                finalClientId = result.lastInsertRowid;
+            }
         }
 
         const result = db.prepare(`
       INSERT INTO cases (case_number, title, court, type, lawyer_id, client_id, fees, currency)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(case_number, title, court, type, lawyer_id, client.id, Number(fees) || 0, currency || 'ر.س');
+    `).run(case_number, title, court, type, lawyer_id, finalClientId, Number(fees) || 0, currency || 'ر.س');
         res.json({ id: result.lastInsertRowid });
     } catch (e: any) {
         res.status(400).json({ error: e.message });
@@ -70,6 +80,16 @@ router.get("/:id", (req, res) => {
     const documents = db.prepare("SELECT * FROM documents WHERE case_id = ? ORDER BY created_at DESC").all(req.params.id);
 
     res.json({ ...caseData, sessions, messages, documents });
+});
+
+router.patch("/:id", (req, res) => {
+    const { title, status, type } = req.body;
+    try {
+        db.prepare("UPDATE cases SET title = ?, status = ?, type = ? WHERE id = ?").run(title, status, type, req.params.id);
+        res.json({ success: true });
+    } catch (e: any) {
+        res.status(400).json({ error: e.message });
+    }
 });
 
 router.patch("/:id/fees", (req, res) => {

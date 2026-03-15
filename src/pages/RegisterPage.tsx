@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, UserPlus } from 'lucide-react';
 import { motion } from 'motion/react';
 import { getApiUrl } from '../config';
 import { User } from '../types';
@@ -9,7 +9,6 @@ export const RegisterPage = ({ onLogin }: { onLogin: (user: User) => void }) => 
     const [formData, setFormData] = useState({
         name: '',
         email: '',
-        phone: '',
         password: ''
     });
     const [error, setError] = useState('');
@@ -22,10 +21,10 @@ export const RegisterPage = ({ onLogin }: { onLogin: (user: User) => void }) => 
         setError('');
 
         try {
-            const res = await fetch(getApiUrl('/api/register'), {
+            const res = await fetch(getApiUrl('/api/users/register'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(formData)
+                body: JSON.stringify({ ...formData, role: 'lawyer' })
             });
 
             if (res.ok) {
@@ -44,76 +43,65 @@ export const RegisterPage = ({ onLogin }: { onLogin: (user: User) => void }) => 
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50">
+        <div className="min-h-screen flex items-center justify-center p-4 bg-[#0a0e1a] bg-mesh relative overflow-hidden">
+            <div className="absolute top-1/3 left-1/3 w-96 h-96 bg-violet-600/10 rounded-full blur-[120px]" />
+            <div className="absolute bottom-1/3 right-1/3 w-96 h-96 bg-indigo-600/10 rounded-full blur-[120px]" />
+
             <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="w-full max-w-md glass-panel p-8 rounded-3xl shadow-xl"
+                className="w-full max-w-md glass-panel-strong p-10 rounded-[2.5rem] relative z-10"
             >
-                <h1 className="text-2xl font-bold text-slate-900 mb-2">إنشاء حساب موكل جديد</h1>
-                <p className="text-slate-500 mb-8">يرجى إدخال بياناتك لمتابعة قضاياك</p>
+                <div className="flex flex-col items-center mb-8">
+                    <motion.div
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        transition={{ type: "spring", delay: 0.2 }}
+                        className="w-16 h-16 bg-gradient-to-br from-violet-500 to-indigo-600 rounded-2xl flex items-center justify-center mb-4 shadow-2xl shadow-violet-500/30"
+                    >
+                        <UserPlus className="w-8 h-8 text-white" />
+                    </motion.div>
+                    <h1 className="text-2xl font-black text-white">إنشاء حساب موكل جديد</h1>
+                    <p className="text-slate-500 mt-1 font-medium">يرجى إدخال بياناتك لمتابعة قضاياك</p>
+                </div>
 
-                <form onSubmit={handleSubmit} className="space-y-4">
+                <form onSubmit={handleSubmit} className="space-y-5">
                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">الاسم الكامل</label>
-                        <input
-                            type="text"
-                            className="input-field"
-                            required
-                            value={formData.name}
-                            onChange={e => setFormData({ ...formData, name: e.target.value })}
-                        />
+                        <label className="block text-sm font-bold text-slate-400 mb-2">الاسم الكامل</label>
+                        <input type="text" className="input-field" required value={formData.name}
+                            onChange={e => setFormData({ ...formData, name: e.target.value })} />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">البريد الإلكتروني</label>
-                        <input
-                            type="email"
-                            className="input-field"
-                            required
-                            value={formData.email}
-                            onChange={e => setFormData({ ...formData, email: e.target.value })}
-                        />
+                        <label className="block text-sm font-bold text-slate-400 mb-2">البريد الإلكتروني</label>
+                        <input type="email" className="input-field" required value={formData.email}
+                            onChange={e => setFormData({ ...formData, email: e.target.value })} />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">رقم الهاتف</label>
-                        <input
-                            type="tel"
-                            className="input-field"
-                            required
-                            placeholder="05XXXXXXXX"
-                            value={formData.phone}
-                            onChange={e => setFormData({ ...formData, phone: e.target.value })}
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">كلمة المرور</label>
-                        <input
-                            type="password"
-                            className="input-field"
-                            required
-                            value={formData.password}
-                            onChange={e => setFormData({ ...formData, password: e.target.value })}
-                        />
+                        <label className="block text-sm font-bold text-slate-400 mb-2">كلمة المرور</label>
+                        <input type="password" className="input-field" required value={formData.password}
+                            onChange={e => setFormData({ ...formData, password: e.target.value })} />
                     </div>
 
                     {error && (
-                        <div className="p-3 bg-red-50 text-red-600 rounded-lg text-sm flex items-center gap-2">
+                        <div className="p-4 bg-red-500/10 text-red-400 rounded-2xl text-sm flex items-center gap-2 border border-red-500/20">
                             <AlertCircle className="w-4 h-4" />
                             {error}
                         </div>
                     )}
 
-                    <button
+                    <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
                         type="submit"
                         disabled={loading}
-                        className="btn-primary w-full py-3 mt-2"
+                        className="w-full py-4 bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-2xl font-black text-lg shadow-2xl shadow-violet-500/20 transition-all disabled:opacity-50"
                     >
                         {loading ? 'جاري إنشاء الحساب...' : 'إنشاء الحساب'}
-                    </button>
+                    </motion.button>
                 </form>
 
                 <div className="mt-6 text-center">
-                    <Link to="/login" className="text-slate-500 hover:text-indigo-600 text-sm">لديك حساب بالفعل؟ سجل دخولك</Link>
+                    <Link to="/login" className="text-slate-500 hover:text-indigo-400 text-sm transition-colors">لديك حساب بالفعل؟ سجل دخولك</Link>
                 </div>
             </motion.div>
         </div>

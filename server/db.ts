@@ -12,7 +12,7 @@ export const initializeDb = () => {
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
-      email TEXT UNIQUE NOT NULL,
+      email TEXT UNIQUE,
       password TEXT NOT NULL,
       role TEXT CHECK(role IN ('lawyer', 'client')) NOT NULL,
       phone TEXT

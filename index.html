@@ -12,6 +12,20 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
+      window.addEventListener('error', (event) => {
+        document.body.innerHTML += `<div style="position:fixed; top:0; left:0; right:0; background:red; color:white; padding:20px; z-index:99999; font-size:12px; font-family:monospace; white-space:pre-wrap;">
+          <b>Error:</b> ${event.message}<br>
+          <b>Location:</b> ${event.filename}:${event.lineno}:${event.colno}<br>
+          <b>Stack:</b> ${event.error ? event.error.stack : 'N/A'}
+        </div>`;
+      });
+      window.addEventListener('unhandledrejection', (event) => {
+        document.body.innerHTML += `<div style="position:fixed; top:200px; left:0; right:0; background:orange; color:white; padding:20px; z-index:99999; font-size:12px; font-family:monospace; white-space:pre-wrap;">
+          <b>Promise Rejection:</b> ${event.reason ? (event.reason.stack || event.reason.message || event.reason) : 'Unknown'}
+        </div>`;
+      });
+    </script>
+    <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('/sw.js').then(reg => {
