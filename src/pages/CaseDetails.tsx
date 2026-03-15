@@ -60,8 +60,8 @@ export const CaseDetails = ({ user }: { user: User }) => {
             setCaseData(data);
             if (data) {
                 setFeesData({
-                    fees: data.fees.toString(),
-                    paid_amount: data.paid_amount.toString(),
+                    fees: (data.fees || 0).toString(),
+                    paid_amount: (data.paid_amount || 0).toString(),
                     currency: data.currency || 'ريال سعودي'
                 });
             }
@@ -100,38 +100,47 @@ export const CaseDetails = ({ user }: { user: User }) => {
         }
     };
 
+    const callGeminiDirectly = async (message: string, history: any[]) => {
+        const apiKey = import.meta.env.VITE_GEMINI_API_KEY || 'AIzaSyBshJBaRJyBmkVqDuaFxqNwBqMbTnK3Bes';
+        const caseContext = caseData ? `أنت مستشار قانوني متخصص. هذه هي بيانات القضية:\nالعنوان: ${caseData.title}\nالمحكمة: ${caseData.court}\nالنوع: ${caseData.type}\nالموكل: ${caseData.client_name}\nالأتعاب: ${caseData.fees || 0}\nالمدفوع: ${caseData.paid_amount || 0}` : '';
+
+        const contents = [
+            { role: 'user', parts: [{ text: caseContext + '\n\n' + message }] },
+            ...history
+        ];
+
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents })
+        });
+        const data = await res.json();
+        return data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
+    };
+
     const handleGenerateAiSummary = async () => {
         setGeneratingAi(true);
         setAiError(null);
         try {
-            const res = await fetch(getApiUrl('/api/ai/chat'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    caseId: id,
-                    message: "قدم لي ملخصاً قانونياً للموقف الحالي بناءً على البيانات المتوفرة في القضية.",
-                    history: []
-                })
-            });
-            const data = await res.json();
-            if (data.text) {
+            const text = await callGeminiDirectly("قدم لي ملخصاً قانونياً للموقف الحالي بناءً على البيانات المتوفرة في القضية.", []);
+            if (text) {
                 const aiMsg = {
                     id: Date.now(),
                     case_id: Number(id),
                     sender_id: 0,
                     sender_name: 'المستشار القانوني الخاص',
-                    content: data.text,
+                    content: text,
                     created_at: new Date().toISOString()
                 };
                 setAiChatMessages([aiMsg]);
-                setAiChatHistory([{ role: 'model', parts: [{ text: data.text }] }]);
+                setAiChatHistory([{ role: 'model', parts: [{ text }] }]);
                 setActiveTab('ai_chat');
-            } else if (data.error) {
-                setAiError(data.error);
+            } else {
+                setAiError('لم يتم الحصول على رد من المستشار');
             }
         } catch (err) {
             console.error("AI Summary Error:", err);
-            setAiError("فشل الاتصال بخدمة المستشار الذكي. يرجى المحاولة مرة أخرى.");
+            setAiError("فشل الاتصال بخدمة المستشار الذكي. تأكد من اتصالك بالإنترنت.");
         } finally {
             setGeneratingAi(false);
         }
@@ -141,36 +150,27 @@ export const CaseDetails = ({ user }: { user: User }) => {
         setIsAiThinking(true);
         setAiError(null);
         try {
-            const res = await fetch(getApiUrl('/api/ai/chat'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    caseId: id,
-                    message: userMsg,
-                    history: aiChatHistory
-                })
-            });
-            const data = await res.json();
-            if (data.text) {
+            const text = await callGeminiDirectly(userMsg, aiChatHistory);
+            if (text) {
                 const aiMsg = {
                     id: Date.now() + 1,
                     case_id: Number(id),
                     sender_id: 0,
                     sender_name: 'المستشار القانوني الخاص',
-                    content: data.text,
+                    content: text,
                     created_at: new Date().toISOString()
                 };
                 setAiChatMessages(prev => [...prev, aiMsg]);
                 setAiChatHistory(prev => [...prev,
                 { role: 'user', parts: [{ text: userMsg }] },
-                { role: 'model', parts: [{ text: data.text }] }
+                { role: 'model', parts: [{ text }] }
                 ]);
-            } else if (data.error) {
-                setAiError(data.error);
+            } else {
+                setAiError('لم يتم الحصول على رد');
             }
         } catch (err) {
             console.error("AI Chat Error:", err);
-            setAiError("فشل الحصول على رد من المستشار. يرجى التحقق من اتصالك بالإنترنت.");
+            setAiError("فشل الحصول على رد من المستشار. تأكد من اتصالك بالإنترنت.");
         } finally {
             setIsAiThinking(false);
         }
@@ -222,15 +222,13 @@ export const CaseDetails = ({ user }: { user: User }) => {
         const notes = formData.get('notes') as string;
 
         try {
-            const res = await fetch(getApiUrl('/api/sessions'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ case_id: id, session_date: date, notes })
+            await dataService.addSession({
+                case_id: Number(id),
+                session_date: date,
+                notes: notes || ''
             });
-            if (res.ok) {
-                fetchData();
-                (e.target as any).reset();
-            }
+            fetchData();
+            (e.target as any).reset();
         } catch (err) {
             console.error(err);
         }
@@ -442,15 +440,15 @@ export const CaseDetails = ({ user }: { user: User }) => {
                                                     <div className="grid grid-cols-3 gap-4">
                                                         <div className="text-center">
                                                             <p className="text-[10px] text-slate-400 mb-1">الإجمالي</p>
-                                                            <p className="font-black text-indigo-400 text-lg">{caseData.fees.toLocaleString()} <span className="text-[10px] font-bold">{caseData.currency || 'ريال سعودي'}</span></p>
+                                                            <p className="font-black text-indigo-400 text-lg">{(caseData.fees || 0).toLocaleString()} <span className="text-[10px] font-bold">{caseData.currency || 'ريال سعودي'}</span></p>
                                                         </div>
                                                         <div className="text-center border-x border-white/5">
                                                             <p className="text-[10px] text-slate-400 mb-1">المدفوع</p>
-                                                            <p className="font-black text-emerald-600 text-lg">{caseData.paid_amount.toLocaleString()} <span className="text-[10px] font-bold">{caseData.currency || 'ريال سعودي'}</span></p>
+                                                            <p className="font-black text-emerald-600 text-lg">{(caseData.paid_amount || 0).toLocaleString()} <span className="text-[10px] font-bold">{caseData.currency || 'ريال سعودي'}</span></p>
                                                         </div>
                                                         <div className="text-center">
                                                             <p className="text-[10px] text-slate-400 mb-1">المتبقي</p>
-                                                            <p className="font-black text-red-500 text-lg">{(caseData.fees - caseData.paid_amount).toLocaleString()} <span className="text-[10px] font-bold">{caseData.currency || 'ريال سعودي'}</span></p>
+                                                            <p className="font-black text-red-500 text-lg">{((caseData.fees || 0) - (caseData.paid_amount || 0)).toLocaleString()} <span className="text-[10px] font-bold">{caseData.currency || 'ريال سعودي'}</span></p>
                                                         </div>
                                                     </div>
 
