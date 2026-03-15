@@ -24,13 +24,17 @@ export const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
             const user = await dataService.login(identifier);
             
             if (user) {
-                // In a real app, verify password here
-                onLogin(user);
+                // Verify password locally
+                if (user.password && user.password !== password) {
+                    setError('كلمة المرور غير صحيحة');
+                } else {
+                    onLogin(user);
+                }
             } else {
-                setError('المستخدم غير موجود محلياً');
+                setError('المستخدم غير موجود، تأكد من البريد أو رقم الهاتف');
             }
         } catch (err) {
-            setError('حدث خطأ في الوصول للبيانات');
+            setError('حدث خطأ في الوصول للبيانات المحلية');
         } finally {
             setLoading(false);
         }

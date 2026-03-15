@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertCircle, ArrowRight, Key } from 'lucide-react';
 import { motion } from 'motion/react';
-import { getApiUrl } from '../config';
+import { db } from '../db';
 
 export const ForgotPassword = () => {
     const [phone, setPhone] = useState('');
@@ -18,21 +18,21 @@ export const ForgotPassword = () => {
         setResult(null);
 
         try {
-            const res = await fetch(getApiUrl('/api/recover'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ phone, dob })
-            });
+            // Search locally in IndexedDB
+            const user = await db.users
+                .filter(u => u.phone === phone)
+                .first();
 
-            if (res.ok) {
-                const data = await res.json();
-                setResult(data);
+            if (user) {
+                setResult({
+                    email: user.email,
+                    password: user.password || '(كلمة المرور مشفرة)'
+                });
             } else {
-                const data = await res.json();
-                setError(data.error || 'البيانات المدخلة غير صحيحة');
+                setError('لم يتم العثور على حساب بهذا الرقم');
             }
         } catch (err) {
-            setError('حدث خطأ في الاتصال بالخادم');
+            setError('حدث خطأ في البحث في البيانات المحلية');
         } finally {
             setLoading(false);
         }
