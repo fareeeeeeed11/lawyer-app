@@ -43,7 +43,7 @@ export default function App() {
       <div className="min-h-screen bg-[#030712] bg-mesh text-white font-sans flex overflow-hidden" dir="rtl">
         {user && <Sidebar user={user} onLogout={handleLogout} />}
 
-        <main className={`flex-1 overflow-y-auto h-screen ${user ? 'mr-20 md:mr-24' : ''}`}>
+        <main className={`flex-1 overflow-y-auto h-screen ${user ? 'md:mr-24 pb-20 md:pb-0' : ''}`}>
           <div className="max-w-[1600px] mx-auto p-4 md:p-8">
             <Routes>
               <Route
