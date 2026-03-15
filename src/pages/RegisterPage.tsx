@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AlertCircle, UserPlus } from 'lucide-react';
 import { motion } from 'motion/react';
-import { getApiUrl } from '../config';
 import { User } from '../types';
+import { db } from '../db';
 
 export const RegisterPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
     const [formData, setFormData] = useState({
@@ -21,22 +21,24 @@ export const RegisterPage = ({ onLogin }: { onLogin: (user: User) => void }) => 
         setError('');
 
         try {
-            const res = await fetch(getApiUrl('/api/users/register'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...formData, role: 'lawyer' })
-            });
-
-            if (res.ok) {
-                const user = await res.json();
-                onLogin(user);
-                navigate('/');
-            } else {
-                const data = await res.json();
-                setError(data.error || 'خطأ في إنشاء الحساب');
+            // Check if email already exists locally
+            const existing = await db.users.where('email').equals(formData.email).first();
+            if (existing) {
+                setError('هذا البريد مسجل بالفعل');
+                setLoading(false);
+                return;
             }
+
+            const id = await db.users.add({
+                ...formData,
+                role: 'lawyer'
+            } as User);
+
+            const user = { ...formData, id, role: 'lawyer' as const };
+            onLogin(user as User);
+            navigate('/');
         } catch (err) {
-            setError('حدث خطأ في الاتصال بالخادم');
+            setError('حدث خطأ في إنشاء الحساب');
         } finally {
             setLoading(false);
         }
@@ -61,8 +63,8 @@ export const RegisterPage = ({ onLogin }: { onLogin: (user: User) => void }) => 
                     >
                         <UserPlus className="w-8 h-8 text-white" />
                     </motion.div>
-                    <h1 className="text-2xl font-black text-white">إنشاء حساب موكل جديد</h1>
-                    <p className="text-slate-500 mt-1 font-medium">يرجى إدخال بياناتك لمتابعة قضاياك</p>
+                    <h1 className="text-2xl font-black text-white">إنشاء حساب جديد</h1>
+                    <p className="text-slate-500 mt-1 font-medium">قم بتسجيل حسابك لإدارة قضاياك</p>
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-5">

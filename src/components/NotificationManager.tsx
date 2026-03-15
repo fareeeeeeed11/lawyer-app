@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { User, Session } from '../types';
-import { getApiUrl } from '../config';
+import { dataService } from '../services/dataService';
 
 interface NotificationManagerProps {
     user: User | null;
@@ -19,9 +19,8 @@ export const NotificationManager: React.FC<NotificationManagerProps> = ({ user }
 
         const checkSessions = async () => {
             try {
-                const res = await fetch(getApiUrl(`/api/sessions/upcoming/${user.id}`));
-                if (!res.ok) return;
-                const sessions: Session[] = await res.json();
+                // Use local dataService instead of server API
+                const sessions = await dataService.getSessions(user.id);
                 console.log(`Notifications: found ${sessions.length} sessions`);
 
                 const now = new Date();
@@ -29,7 +28,7 @@ export const NotificationManager: React.FC<NotificationManagerProps> = ({ user }
                 sessions.forEach(session => {
                     const sessionDate = new Date(session.session_date);
                     const diffMs = sessionDate.getTime() - now.getTime();
-                    const diffMins = Math.ceil(diffMs / 60000); // Use ceil to be slightly ahead
+                    const diffMins = Math.ceil(diffMs / 60000);
 
                     console.log(`Checking session ${session.id}: ${session.case_title}, diff: ${diffMins}m`);
 
@@ -39,7 +38,6 @@ export const NotificationManager: React.FC<NotificationManagerProps> = ({ user }
                     thresholds.forEach(threshold => {
                         const key = `${session.id}-${threshold}`;
 
-                        // Notify if we are at or just under the threshold, and haven't notified for it yet
                         if (diffMins <= threshold && diffMins > threshold - 2 && !notifiedSessions.current.has(key)) {
                             console.log(`Triggering notification for ${threshold}m threshold`);
                             showNotification(session, threshold);
