@@ -17,7 +17,10 @@ import {
     AlertCircle,
     Sparkles,
     Eye,
-    X
+    X,
+    Trash2,
+    Edit3,
+    Phone
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { io, Socket } from 'socket.io-client';
@@ -34,6 +37,7 @@ function cn(...inputs: ClassValue[]) {
 
 import { dataService } from '../services/dataService';
 import { documentStorage } from '../services/documentStorage';
+import { db } from '../db';
 
 export const CaseDetails = ({ user }: { user: User }) => {
     const { id } = useParams();
@@ -53,6 +57,8 @@ export const CaseDetails = ({ user }: { user: User }) => {
     const [aiChatInput, setAiChatInput] = useState('');
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [previewType, setPreviewType] = useState<'image' | 'pdf' | 'other' | null>(null);
+    const [isEditingCase, setIsEditingCase] = useState(false);
+    const [editForm, setEditForm] = useState({ title: '', court: '', type: '', client_name: '', client_phone: '' });
 
     const fetchData = async () => {
         try {
@@ -60,9 +66,16 @@ export const CaseDetails = ({ user }: { user: User }) => {
             setCaseData(data);
             if (data) {
                 setFeesData({
-                    fees: (data.fees || 0).toString(),
-                    paid_amount: (data.paid_amount || 0).toString(),
+                    fees: (data.fees || '').toString(),
+                    paid_amount: (data.paid_amount || '').toString(),
                     currency: data.currency || 'ريال سعودي'
+                });
+                setEditForm({
+                    title: data.title || '',
+                    court: data.court || '',
+                    type: data.type || '',
+                    client_name: data.client_name || '',
+                    client_phone: data.client_phone || ''
                 });
             }
         } catch (err) {
@@ -100,20 +113,58 @@ export const CaseDetails = ({ user }: { user: User }) => {
         }
     };
 
+    const handleEditCase = async () => {
+        try {
+            await db.cases.update(Number(id), editForm);
+            await fetchData();
+            setIsEditingCase(false);
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
     const callGeminiDirectly = async (message: string, history: any[]) => {
         const apiKey = import.meta.env.VITE_GEMINI_API_KEY || 'AIzaSyBshJBaRJyBmkVqDuaFxqNwBqMbTnK3Bes';
-        const caseContext = caseData ? `أنت مستشار قانوني متخصص. هذه هي بيانات القضية:\nالعنوان: ${caseData.title}\nالمحكمة: ${caseData.court}\nالنوع: ${caseData.type}\nالموكل: ${caseData.client_name}\nالأتعاب: ${caseData.fees || 0}\nالمدفوع: ${caseData.paid_amount || 0}` : '';
+        
+        const systemText = `أنت مستشار قانوني متخصص وخبير في القانون العربي والدولي. اسمك "المستشار القانوني الخاص".
 
+القواعد:
+1. أجب فقط على الأسئلة القانونية والمتعلقة بالقضايا والمحاكم والعقود والأنظمة واللوائح.
+2. إذا سألك المستخدم سؤالاً غير قانوني (مثل الطبخ أو الرياضة أو أي موضوع آخر)، أجب بلطف: "أعتذر، أنا متخصص في الشؤون القانونية فقط. يمكنني مساعدتك في أي استفسار قانوني."
+3. قدم إجابات مفصلة ومهنية مع ذكر المواد القانونية والأنظمة عند الإمكان.
+4. استخدم لغة عربية فصحى واضحة.
+5. نظّم إجابتك بشكل مرتب باستخدام عناوين ونقاط.
+
+${caseData ? `بيانات القضية الحالية:
+- العنوان: ${caseData.title}
+- المحكمة: ${caseData.court}
+- النوع: ${caseData.type}
+- الموكل: ${caseData.client_name}
+- الأتعاب: ${(caseData.fees || 0).toLocaleString()} ${caseData.currency || 'ريال سعودي'}
+- المدفوع: ${(caseData.paid_amount || 0).toLocaleString()} ${caseData.currency || 'ريال سعودي'}
+- عدد الجلسات: ${caseData.sessions?.length || 0}` : ''}`;
+
+        // Build contents in correct order: history first, then new message
         const contents = [
-            { role: 'user', parts: [{ text: caseContext + '\n\n' + message }] },
-            ...history
+            ...history,
+            { role: 'user', parts: [{ text: message }] }
         ];
 
         const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents })
+            body: JSON.stringify({
+                systemInstruction: { parts: [{ text: systemText }] },
+                contents
+            })
         });
+        
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            console.error('Gemini API error:', errData);
+            throw new Error('فشل الاتصال بالمستشار الذكي');
+        }
+        
         const data = await res.json();
         return data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
     };
@@ -282,7 +333,14 @@ export const CaseDetails = ({ user }: { user: User }) => {
                         className="p-3 text-red-500 hover:bg-red-500/10 rounded-2xl transition-colors"
                         title="حذف القضية"
                     >
-                        <AlertCircle className="w-6 h-6" />
+                        <Trash2 className="w-6 h-6" />
+                    </button>
+                    <button
+                        onClick={() => setIsEditingCase(true)}
+                        className="p-3 text-indigo-400 hover:bg-indigo-500/10 rounded-2xl transition-colors"
+                        title="تعديل القضية"
+                    >
+                        <Edit3 className="w-6 h-6" />
                     </button>
                 </div>
             </div>
@@ -424,8 +482,8 @@ export const CaseDetails = ({ user }: { user: User }) => {
                                                             onClick={() => {
                                                                 setIsEditingFees(false);
                                                                 setFeesData({
-                                                                    fees: caseData.fees.toString(),
-                                                                    paid_amount: caseData.paid_amount.toString(),
+                                                                    fees: (caseData.fees || '').toString(),
+                                                                    paid_amount: (caseData.paid_amount || '').toString(),
                                                                     currency: caseData.currency || 'ريال سعودي'
                                                                 });
                                                             }}
@@ -456,16 +514,16 @@ export const CaseDetails = ({ user }: { user: User }) => {
                                                         <div className="flex justify-between items-end">
                                                             <span className="text-[10px] font-bold text-slate-500">نسبة التحصيل</span>
                                                             <span className="text-xs font-black text-indigo-400">
-                                                                {Math.round((caseData.paid_amount / (caseData.fees || 1)) * 100)}%
+                                                                {caseData.fees ? Math.round(((caseData.paid_amount || 0) / caseData.fees) * 100) : 0}%
                                                             </span>
                                                         </div>
                                                         <div className="h-3 bg-white/5 rounded-full overflow-hidden p-0.5 border border-white shadow-inner">
                                                             <motion.div
                                                                 initial={{ width: 0 }}
-                                                                animate={{ width: `${(caseData.paid_amount / (caseData.fees || 1)) * 100}%` }}
+                                                                animate={{ width: `${caseData.fees ? ((caseData.paid_amount || 0) / caseData.fees) * 100 : 0}%` }}
                                                                 className={cn(
                                                                     "h-full rounded-full shadow-sm",
-                                                                    (caseData.paid_amount / (caseData.fees || 1)) >= 1 ? "bg-emerald-500/100" : "bg-indigo-600"
+                                                                    caseData.fees && (caseData.paid_amount || 0) >= caseData.fees ? "bg-emerald-500" : "bg-indigo-600"
                                                                 )}
                                                             />
                                                         </div>
@@ -480,7 +538,7 @@ export const CaseDetails = ({ user }: { user: User }) => {
                                     <h3 className="text-lg font-bold text-white mb-4">سير القضية</h3>
                                     <div className="relative pr-8 space-y-8 before:absolute before:right-3 before:top-2 before:bottom-2 before:w-0.5 before:bg-white/5">
                                         <div className="relative">
-                                            <div className="absolute -right-8 top-1 w-6 h-6 bg-emerald-500/100 rounded-full border-4 border-white shadow-sm flex items-center justify-center">
+                                            <div className="absolute -right-8 top-1 w-6 h-6 bg-emerald-500 rounded-full border-4 border-white shadow-sm flex items-center justify-center">
                                                 <CheckCircle2 className="w-3 h-3 text-white" />
                                             </div>
                                             <p className="font-bold text-white">تم استلام القضية</p>
@@ -493,12 +551,40 @@ export const CaseDetails = ({ user }: { user: User }) => {
                                                 })()}
                                             </p>
                                         </div>
-                                        <div className="relative">
-                                            <div className="absolute -right-8 top-1 w-6 h-6 bg-indigo-500/100 rounded-full border-4 border-white shadow-sm flex items-center justify-center">
-                                                <Clock className="w-3 h-3 text-white" />
+                                        {caseData.sessions && caseData.sessions.length > 0 ? (
+                                            <>
+                                                <div className="relative">
+                                                    <div className="absolute -right-8 top-1 w-6 h-6 bg-emerald-500 rounded-full border-4 border-white shadow-sm flex items-center justify-center">
+                                                        <CheckCircle2 className="w-3 h-3 text-white" />
+                                                    </div>
+                                                    <p className="font-bold text-white">تم جدولة {caseData.sessions.length} جلسة</p>
+                                                    <p className="text-sm text-slate-500">المرافعة جارية أمام المحكمة</p>
+                                                </div>
+                                                {(caseData.paid_amount || 0) > 0 && (
+                                                    <div className="relative">
+                                                        <div className="absolute -right-8 top-1 w-6 h-6 bg-emerald-500 rounded-full border-4 border-white shadow-sm flex items-center justify-center">
+                                                            <CheckCircle2 className="w-3 h-3 text-white" />
+                                                        </div>
+                                                        <p className="font-bold text-white">تم تحصيل جزء من الأتعاب</p>
+                                                        <p className="text-sm text-slate-500">{(caseData.paid_amount || 0).toLocaleString()} {caseData.currency || 'ريال سعودي'} محصّلة</p>
+                                                    </div>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <div className="relative">
+                                                <div className="absolute -right-8 top-1 w-6 h-6 bg-indigo-500 rounded-full border-4 border-white shadow-sm flex items-center justify-center">
+                                                    <Clock className="w-3 h-3 text-white" />
+                                                </div>
+                                                <p className="font-bold text-white">قيد المراجعة والتحضير</p>
+                                                <p className="text-sm text-slate-500">لم تُجدول أي جلسة بعد</p>
                                             </div>
-                                            <p className="font-bold text-white">قيد المراجعة والمرافعة</p>
-                                            <p className="text-sm text-slate-500">جاري العمل على الملف</p>
+                                        )}
+                                        <div className="relative">
+                                            <div className={`absolute -right-8 top-1 w-6 h-6 rounded-full border-4 border-white shadow-sm flex items-center justify-center ${caseData.fees && (caseData.paid_amount || 0) >= caseData.fees ? 'bg-emerald-500' : 'bg-slate-600'}`}>
+                                                <AlertCircle className="w-3 h-3 text-white" />
+                                            </div>
+                                            <p className="font-bold text-white">{caseData.fees && (caseData.paid_amount || 0) >= caseData.fees ? 'تم التحصيل الكامل' : 'في انتظار إتمام التحصيل'}</p>
+                                            <p className="text-sm text-slate-500">{caseData.fees && (caseData.paid_amount || 0) >= caseData.fees ? 'القضية مكتملة مالياً' : 'لم يكتمل التحصيل بعد'}</p>
                                         </div>
                                     </div>
                                 </div>
@@ -518,12 +604,12 @@ export const CaseDetails = ({ user }: { user: User }) => {
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 bg-white/5 text-slate-600 rounded-lg flex items-center justify-center">
-                                                <MessageSquare className="w-5 h-5" />
+                                            <div className="w-10 h-10 bg-emerald-500/10 text-emerald-400 rounded-lg flex items-center justify-center">
+                                                <Phone className="w-5 h-5" />
                                             </div>
                                             <div>
-                                                <p className="text-xs text-slate-400">البريد الإلكتروني</p>
-                                                <p className="font-bold text-sm">{caseData.client_email}</p>
+                                                <p className="text-xs text-slate-400">رقم الهاتف</p>
+                                                <p className="font-bold text-sm" dir="ltr">{caseData.client_phone || 'غير محدد'}</p>
                                             </div>
                                         </div>
                                     </div>
@@ -550,8 +636,8 @@ export const CaseDetails = ({ user }: { user: User }) => {
                             </div>
 
                             <div className="grid grid-cols-1 gap-4">
-                                {caseData.sessions.length > 0 ? (
-                                    caseData.sessions.map((s: Session) => (
+                                {(caseData.sessions || []).length > 0 ? (
+                                    (caseData.sessions || []).map((s: Session) => (
                                         <div key={s.id} className="glass-panel p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                                             <div className="flex items-center gap-4">
                                                 <div className="w-12 h-12 bg-amber-500/10 text-amber-400 rounded-xl flex items-center justify-center">
@@ -585,16 +671,33 @@ export const CaseDetails = ({ user }: { user: User }) => {
                                                     {s.notes || 'لا توجد ملاحظات'}
                                                 </p>
                                             </div>
-                                            <div className={cn(
-                                                "px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1",
-                                                new Date(s.session_date) > new Date() ? "bg-amber-500/10 text-amber-400" : "bg-white/5 text-slate-500"
-                                            )}>
-                                                {new Date(s.session_date) > new Date() ? (
-                                                    <>
-                                                        <div className="w-1.5 h-1.5 bg-amber-500/100 rounded-full animate-ping" />
-                                                        قادمة
-                                                    </>
-                                                ) : 'منتهية'}
+                                            <div className="flex items-center gap-2">
+                                                <div className={cn(
+                                                    "px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1",
+                                                    new Date(s.session_date) > new Date() ? "bg-amber-500/10 text-amber-400" : "bg-white/5 text-slate-500"
+                                                )}>
+                                                    {new Date(s.session_date) > new Date() ? (
+                                                        <>
+                                                            <div className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-ping" />
+                                                            قادمة
+                                                        </>
+                                                    ) : 'منتهية'}
+                                                </div>
+                                                <button
+                                                    onClick={async () => {
+                                                        if (!window.confirm('هل تريد حذف هذه الجلسة؟')) return;
+                                                        try {
+                                                            await dataService.deleteSession(s.id);
+                                                            fetchData();
+                                                        } catch (err) {
+                                                            console.error(err);
+                                                        }
+                                                    }}
+                                                    className="p-2 text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
+                                                    title="حذف الجلسة"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
                                             </div>
                                         </div>
                                     ))
@@ -632,7 +735,7 @@ export const CaseDetails = ({ user }: { user: User }) => {
                             </div>
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {caseData.documents.map((d: Document) => (
+                                {(caseData.documents || []).map((d: Document) => (
                                     <div key={d.id} className="glass-panel p-4 rounded-xl flex items-center justify-between group">
                                         <div className="flex items-center gap-3 overflow-hidden">
                                             <div className="w-10 h-10 bg-white/5 text-slate-500 rounded-lg flex items-center justify-center flex-shrink-0">
@@ -877,6 +980,61 @@ export const CaseDetails = ({ user }: { user: User }) => {
                                         </a>
                                     </div>
                                 )}
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Edit Case Modal */}
+            <AnimatePresence>
+                {isEditingCase && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+                        onClick={() => setIsEditingCase(false)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            className="bg-[#111827] border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <h3 className="text-xl font-black text-white mb-4">تعديل بيانات القضية</h3>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-400 mb-1">عنوان القضية</label>
+                                    <input type="text" className="input-field" value={editForm.title} onChange={e => setEditForm({ ...editForm, title: e.target.value })} />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-400 mb-1">المحكمة</label>
+                                    <input type="text" className="input-field" value={editForm.court} onChange={e => setEditForm({ ...editForm, court: e.target.value })} />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-400 mb-1">نوع القضية</label>
+                                    <select className="input-field" value={editForm.type} onChange={e => setEditForm({ ...editForm, type: e.target.value })}>
+                                        <option>جنائية</option>
+                                        <option>مدنية</option>
+                                        <option>أحوال شخصية</option>
+                                        <option>تجارية</option>
+                                        <option>عمالية</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-400 mb-1">اسم الموكل</label>
+                                    <input type="text" className="input-field" value={editForm.client_name} onChange={e => setEditForm({ ...editForm, client_name: e.target.value })} />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-400 mb-1">رقم هاتف الموكل</label>
+                                    <input type="tel" className="input-field" dir="ltr" value={editForm.client_phone} onChange={e => setEditForm({ ...editForm, client_phone: e.target.value })} />
+                                </div>
+                                <div className="flex gap-3 pt-2">
+                                    <button onClick={() => setIsEditingCase(false)} className="flex-1 py-3 bg-white/5 text-slate-300 rounded-xl font-bold">إلغاء</button>
+                                    <button onClick={handleEditCase} className="flex-[2] py-3 bg-indigo-500 text-white rounded-xl font-bold">حفظ التعديلات</button>
+                                </div>
                             </div>
                         </motion.div>
                     </motion.div>

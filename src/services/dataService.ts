@@ -20,8 +20,18 @@ export const dataService = {
     return await db.cases.where('lawyer_id').equals(userId).toArray();
   },
 
-  async getCaseById(id: number): Promise<Case | undefined> {
-    return await db.cases.get(id);
+  async getCaseById(id: number): Promise<any | undefined> {
+    const caseData = await db.cases.get(id);
+    if (!caseData) return undefined;
+    
+    const sessions = await db.sessions.where('case_id').equals(id).toArray();
+    const documents = await db.documents.where('case_id').equals(id).toArray();
+    
+    return {
+      ...caseData,
+      sessions: sessions || [],
+      documents: documents || []
+    };
   },
 
   async updateCaseFees(id: number, feesData: any): Promise<void> {
@@ -35,6 +45,7 @@ export const dataService = {
   async addCase(caseData: Omit<Case, 'id' | 'created_at'>): Promise<number> {
     return await db.cases.add({
       ...caseData,
+      status: 'active',
       created_at: new Date().toISOString()
     } as Case);
   },
@@ -89,7 +100,8 @@ export const dataService = {
       await notificationService.scheduleSessionNotification({
         id,
         case_title: caseData.title,
-        session_date: sessionData.session_date
+        session_date: sessionData.session_date,
+        client_name: caseData.client_name
       });
     }
     
@@ -139,7 +151,7 @@ export const dataService = {
     const sessions = await this.getSessions(userId);
     
     return {
-      activeCases: cases.filter(c => c.status === 'active').length,
+      activeCases: cases.filter(c => !c.status || c.status === 'active').length,
       totalClients: clients.length,
       upcomingSessions: sessions.filter(s => new Date(s.session_date) > new Date()).length,
       recentClients: clients.slice(0, 5),

@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ChevronLeft, Plus, Scale, Briefcase } from 'lucide-react';
 import { motion } from 'motion/react';
 import { User } from '../types';
-import { getApiUrl } from '../config';
+
 import { dataService } from '../services/dataService';
 
 export const NewCasePage = ({ user }: { user: User }) => {
@@ -16,7 +16,7 @@ export const NewCasePage = ({ user }: { user: User }) => {
         client_id: null as number | null,
         client_name: '',
         client_phone: '',
-        fees: 0,
+        fees: '' as string | number,
         currency: 'ريال سعودي'
     });
     const [loading, setLoading] = useState(false);

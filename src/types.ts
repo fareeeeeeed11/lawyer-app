@@ -24,7 +24,7 @@ export interface Case {
   created_at: string;
   client_name?: string;
   lawyer_name?: string;
-  client_email?: string;
+  client_phone?: string;
 }
 
 export interface Session {
